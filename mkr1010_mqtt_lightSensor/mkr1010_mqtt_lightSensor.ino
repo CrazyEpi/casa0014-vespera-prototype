@@ -1,13 +1,9 @@
-// Duncan Wilson Oct 2025 - v1 - MQTT messager to vespera
-
-// works with MKR1010
-
 #include <SPI.h>
 #include <WiFiNINA.h>
 #include <PubSubClient.h>
 #include <Adafruit_VEML7700.h>
 #include "arduino_secrets.h" 
-#include <utility/wifi_drv.h>   // library to drive to RGB LED on the MKR1010
+#include <utility/wifi_drv.h> 
 
 Adafruit_VEML7700 veml = Adafruit_VEML7700();
 
@@ -25,6 +21,23 @@ const char* mqtt_username = SECRET_MQTTUSER;
 const char* mqtt_password = SECRET_MQTTPASS;
 const char* mqtt_server   = "mqtt.cetools.org";
 const int mqtt_port       = 1884;
+
+//joystick pins
+const int PIN_VRX = A1;
+const int PIN_VRY = A2;
+const int PIN_SW  = 2;
+
+const int deadzone = 300;    //joystick neutral deadzone
+const int JSmid  = 3270;   //joystick neutral-point
+
+//mode settings
+bool manualMode = false;
+int lightIndex = 0;
+
+unsigned long lastToggleTime = 0;
+int pixelID = 0; //index used in flow light
+
+bool lastButtonPressed = false;
 
 // create wifi object and mqtt object
 WiFiClient wifiClient;
@@ -45,7 +58,7 @@ const int payload_size = num_leds * 3; // x3 for RGB
 const float LUX_DARK   = 5.0f;
 const float LUX_BRIGHT = 800.0f;
 
-const int MIN_BRIGHT = 90;
+const int MIN_BRIGHT = 80;
 const int MAX_BRIGHT = 255;
 
 const uint8_t warm_R = 255, warm_G = 120, warm_B = 0;
@@ -59,7 +72,9 @@ void setup() {
   Serial.begin(115200);
   //while (!Serial); // Wait for serial port to connect (useful for debugging)
   Serial.println("Vespera");
-
+  
+  analogReadResolution(12);     // MKR1010 ADC -> 0..4095
+  pinMode(PIN_SW, INPUT_PULLUP);
 
   // print your MAC address:
   byte mac[6];
@@ -71,8 +86,8 @@ void setup() {
   Serial.println(lightId);
 
   if (!veml.begin()) {
-    Serial.println("Sensor not found");
-    while (1);
+  Serial.println("Sensor not found");
+  while (1);
   }
   Serial.println("Sensor found");
 
@@ -87,51 +102,20 @@ void setup() {
   
   Serial.println("Set-up complete");
 }
- 
-void loop() {
-  // Reconnect if necessary
-  if (!mqttClient.connected()) {
-    reconnectMQTT();
-  }
-  
-  if (WiFi.status() != WL_CONNECTED){
-    startWifi();
-  }
-  // keep mqtt alive
-  mqttClient.loop();
 
-  for(int n=0; n<num_leds; n++){
-    float lux = veml.readLux(); 
-    if (!isfinite(lux) || lux < 0) lux = 0; //safety
-    float t = luxLog(lux, LUX_DARK, LUX_BRIGHT);  //log filter
-    if (t < 0) t = 0; if (t > 1) t = 1; //safety
-
-    float newR = interpo(warm_R, cool_R, t);  //calculate new rgb values
-    float newG = interpo(warm_G, cool_G, t);
-    float newB = interpo(warm_B, cool_B, t);
-
-    float newRbright = (interpo(MIN_BRIGHT, MAX_BRIGHT, t)/255.0f)*newR;  //calculate bright level
-    float newGbright = (interpo(MIN_BRIGHT, MAX_BRIGHT, t)/255.0f)*newG;
-    float newBbright = (interpo(MIN_BRIGHT, MAX_BRIGHT, t)/255.0f)*newB;
-
-    send_all_off();
-    delay(50);
-    send_RGB_to_pixel(newRbright,newGbright,newBbright,n);
-    Serial.print("  Color Factor=(");
-    Serial.print(t); Serial.println(")");
-    delay(120);
-  }
-}
-
-// Function to update the R, G, B values of a single LED pixel
-// RGB can a value between 0-254, pixel is 0-71 for a 72 neopixel strip
-void send_RGB_to_pixel(int r, int g, int b, int pixel) {
+void send_RGB_to_pixel(int r, int g, int b) {
   // Check if the mqttClient is connected before publishing
   if (mqttClient.connected()) {
-    // Update the byte array with the specified RGB color pattern
-    RGBpayload[pixel * 3 + 0] = (byte)r; // Red
-    RGBpayload[pixel * 3 + 1] = (byte)g; // Green
-    RGBpayload[pixel * 3 + 2] = (byte)b; // Blue
+    //update colors
+    for (int i = 0; i < num_leds; i++) {
+      RGBpayload[i * 3 + 0] = 0;
+      RGBpayload[i * 3 + 1] = 0;
+      RGBpayload[i * 3 + 2] = 0;
+    } 
+
+    RGBpayload[lightIndex * 3 + 0] = (byte)r;
+    RGBpayload[lightIndex * 3 + 1] = (byte)g;
+    RGBpayload[lightIndex * 3 + 2] = (byte)b;
 
     // Publish the byte array
     mqttClient.publish(mqtt_topic.c_str(), RGBpayload, payload_size);
@@ -141,21 +125,39 @@ void send_RGB_to_pixel(int r, int g, int b, int pixel) {
   }
 }
 
-void send_all_off() {
-  // Check if the mqttClient is connected before publishing
-  if (mqttClient.connected()) {
-    // Fill the byte array with the specified RGB color pattern
-    for(int pixel=0; pixel < num_leds; pixel++){
-      RGBpayload[pixel * 3 + 0] = (byte)0; // Red
-      RGBpayload[pixel * 3 + 1] = (byte)0; // Green
-      RGBpayload[pixel * 3 + 2] = (byte)0; // Blue
+void printMacAddress(byte mac[]) {
+  for (int i = 5; i >= 0; i--) {
+    if (mac[i] < 16) {
+      Serial.print("0");
     }
-    // Publish the byte array
-    mqttClient.publish(mqtt_topic.c_str(), RGBpayload, payload_size);
-    
-  } else {
-    Serial.println("MQTT mqttClient not connected, cannot publish from *send_all_off*.");
+    Serial.print(mac[i], HEX);
+    if (i > 0) {
+      Serial.print(":");
+    }
   }
+  Serial.println();
+}
+
+void calColor(float t, int &rOut, int &gOut, int &bOut) {
+  // interpolate color temperature between warm and cool thresholds
+  float newR = interpo(warm_R, cool_R, t);
+  float newG = interpo(warm_G, cool_G, t);
+  float newB = interpo(warm_B, cool_B, t);
+
+  // scale brightness between min and max brightness
+  float scale = interpo(MIN_BRIGHT, MAX_BRIGHT, t) / 255.0f;
+
+  float rr = scale * newR;
+  float gg = scale * newG;
+  float bb = scale * newB;
+
+  if (rr < 0) rr = 0; if (rr > 255) rr = 255;
+  if (gg < 0) gg = 0; if (gg > 255) gg = 255;
+  if (bb < 0) bb = 0; if (bb > 255) bb = 255;
+
+  rOut = (int)(rr + 0.5f);
+  gOut = (int)(gg + 0.5f);
+  bOut = (int)(bb + 0.5f);
 }
 
 //calculate rgb value with interpolation
@@ -175,36 +177,162 @@ float luxLog(float lux, float darkLux, float brightLux) {
   return t;
 }
 
-void send_all_random() {
-  // Check if the mqttClient is connected before publishing
+//make light flow in vespera
+void flowLight(){
+  //setup
+  float lux = veml.readLux();
+  if (!isfinite(lux) || lux < 0) lux = 0;
+
+  float t = luxLog(lux, LUX_DARK, LUX_BRIGHT);
+
+  int r,g,b;
+  calColor(t, r, g, b);
+
   if (mqttClient.connected()) {
-    // Fill the byte array with the specified RGB color pattern
-    for(int pixel=0; pixel < num_leds; pixel++){
-      RGBpayload[pixel * 3 + 0] = (byte)random(50,256); // Red - 256 is exclusive, so it goes up to 255
-      RGBpayload[pixel * 3 + 1] = (byte)random(50,256); // Green
-      RGBpayload[pixel * 3 + 2] = (byte)random(50,256); // Blue
+    for (int i = 0; i < num_leds; i++) {
+      RGBpayload[i*3+0] = 0;
+      RGBpayload[i*3+1] = 0;
+      RGBpayload[i*3+2] = 0;
     }
-    // Publish the byte array
+
+    RGBpayload[pixelID*3+0] = (byte)r;
+    RGBpayload[pixelID*3+1] = (byte)g;
+    RGBpayload[pixelID*3+2] = (byte)b;
+
     mqttClient.publish(mqtt_topic.c_str(), RGBpayload, payload_size);
-    
-    Serial.println("Published an all random byte array.");
+  }
+  pixelID = pixelID + 1;
+  if (pixelID >= num_leds) {
+    pixelID = 0;
+  }
+}
+
+void readJoystick(int &xDir, int &yDir, bool &pressed) {
+  int xRaw = analogRead(PIN_VRX);
+  int yRaw = analogRead(PIN_VRY);
+
+  // define center point, and directions of joystick
+  int xC = xRaw - JSmid;
+  int yC = JSmid - yRaw;
+
+  // deadzone filter
+  if (abs(xC) < deadzone) xC = 0;
+  if (abs(yC) < deadzone) yC = 0;
+
+  // convert to direction
+  if (xC > 0)      xDir = +1;
+  else if (xC < 0) xDir = -1;
+  else             xDir = 0;
+
+  if (yC > 0)      yDir = +1;
+  else if (yC < 0) yDir = -1;
+  else             yDir = 0;
+
+  // button: pulled up normally, LOW when pressed
+  pressed = (digitalRead(PIN_SW) == LOW);
+}
+
+void joystickUpdate(int xDir, int yDir) {
+  int col = lightIndex / 6;
+  int row = lightIndex % 6;
+
+  // vertical: up/down = +/-1
+  if (yDir == +1) {         // up
+    if (row > 0) {
+      row -= 1;
+    }
+  } else if (yDir == -1) {  // down
+    if (row < 5) {
+      row += 1;
+    }
+  }
+
+  // horizontal: left/right = +/-6
+  if (xDir == +1) {         // right
+    if (col < 11) {
+      col += 1;
+    }
+  } else if (xDir == -1) {  // left
+    if (col > 0) {
+      col -= 1;
+    }
+  }
+
+  lightIndex = col * 6 + row;
+  //Serial.print("light index is updated ");
+  //Serial.print(lightIndex);
+}
+
+void loop(){
+  // Reconnect if necessary
+  if (!mqttClient.connected()) {
+    reconnectMQTT();
+  }
+  
+  if (WiFi.status() != WL_CONNECTED){
+    startWifi();
+  }
+  // keep mqtt alive
+  mqttClient.loop();
+
+  //read joystick
+  int xDir, yDir;
+  bool pressed;
+  readJoystick(xDir, yDir, pressed);
+
+  //mode selection setup
+  unsigned long nowTime = millis();
+  //single click
+  bool buttonDetection = (!lastButtonPressed && pressed);
+  lastButtonPressed = pressed;
+
+  if (buttonDetection && (nowTime - lastToggleTime > 200)) {
+  manualMode = !manualMode;
+  lastToggleTime = nowTime;
+
+  //pass index number to manual mode
+  if (manualMode) {
+    lightIndex = pixelID;
+  }
+
+  Serial.print("[MODE] manualMode = ");
+    if (manualMode) {
+      Serial.println("Manual");
+    } else {
+      Serial.println("Auto");
+    }
+  }
+
+  //perform control
+  if (manualMode) {
+    joystickUpdate(xDir, yDir);
+
+    float lux = veml.readLux();
+    if (!isfinite(lux) || lux < 0) lux = 0;
+    float t = luxLog(lux, LUX_DARK, LUX_BRIGHT);
+
+    int r,g,b;
+    calColor(t, r, g, b);
+    Serial.print(lightIndex);
+
+    send_RGB_to_pixel(r, g, b);
+    delay(50);
+
+    Serial.print("[MANUAL] pixel=");
+    Serial.print(lightIndex);
+    Serial.print(" xDir=");
+    Serial.print(xDir);
+    Serial.print(" yDir=");
+    Serial.print(yDir);
+    Serial.print(" lux=");
+    Serial.println(lux,1);
+
   } else {
-    Serial.println("MQTT mqttClient not connected, cannot publish from *send_all_random*.");
+    flowLight();
+    Serial.println(lightIndex);
+    Serial.println(pixelID);
+
+    Serial.println("[AUTO] running flow light................");
   }
 }
-
-void printMacAddress(byte mac[]) {
-  for (int i = 5; i >= 0; i--) {
-    if (mac[i] < 16) {
-      Serial.print("0");
-    }
-    Serial.print(mac[i], HEX);
-    if (i > 0) {
-      Serial.print(":");
-    }
-  }
-  Serial.println();
-}
-
-
 

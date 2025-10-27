@@ -107,11 +107,11 @@ void send_RGB_to_pixel(int r, int g, int b) {
   // Check if the mqttClient is connected before publishing
   if (mqttClient.connected()) {
     //update colors
-    for (int i = 0; i < num_leds; i++) {
-      RGBpayload[i * 3 + 0] = 0;
-      RGBpayload[i * 3 + 1] = 0;
-      RGBpayload[i * 3 + 2] = 0;
-    } 
+    // for (int i = 0; i < num_leds; i++) {
+    //   RGBpayload[i * 3 + 0] = 0;
+    //   RGBpayload[i * 3 + 1] = 0;
+    //   RGBpayload[i * 3 + 2] = 0;
+    // } 
 
     RGBpayload[lightIndex * 3 + 0] = (byte)r;
     RGBpayload[lightIndex * 3 + 1] = (byte)g;
@@ -193,11 +193,19 @@ void flowLight(){
       RGBpayload[i*3+0] = 0;
       RGBpayload[i*3+1] = 0;
       RGBpayload[i*3+2] = 0;
+
     }
 
     RGBpayload[pixelID*3+0] = (byte)r;
     RGBpayload[pixelID*3+1] = (byte)g;
     RGBpayload[pixelID*3+2] = (byte)b;
+
+    int nextPixel = pixelID + 1;
+    if (nextPixel < num_leds) {
+      RGBpayload[nextPixel*3+0] = (byte)r;
+      RGBpayload[nextPixel*3+1] = (byte)g;
+      RGBpayload[nextPixel*3+2] = (byte)b;
+    }
 
     mqttClient.publish(mqtt_topic.c_str(), RGBpayload, payload_size);
   }
@@ -284,7 +292,7 @@ void loop(){
   unsigned long nowTime = millis();
   //single click
   bool buttonDetection = (!lastButtonPressed && pressed);
-  lastButtonPressed = pressed;
+    lastButtonPressed = pressed;
 
   if (buttonDetection && (nowTime - lastToggleTime > 200)) {
   manualMode = !manualMode;

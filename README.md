@@ -1,9 +1,8 @@
-# casa0014-vespera-prototype
-A prototype program to control lights with a light sensor and a joystick.
+# Lightplatoon - A CASA-0014 Prototype
 
 # Introduction and Inspiration
 
-The design is inspired by a video game - Splatoon, hopefully, it would creat a cozy vibe, helping people understand, and interact with the environment.
+The prototype is inspired by a video game - Splatoon, hopefully, it would creat a cozy vibe, helping people understand, and interact with the environment.
 
 <img width="800" height="400" alt="image" src="https://github.com/user-attachments/assets/95e366d0-c163-44cd-89b4-6175559a1503" />
 
@@ -11,6 +10,12 @@ Splatoon is a TPS(Third Person Shooter) game, performing a 5v5 match, where vict
 
 # Methodology
 ## Device Setup
+  <img src="https://github.com/user-attachments/assets/243b8fdc-7a80-4006-b87e-a2562cf6bb65" width="250" height="auto" />
+  <img src="https://github.com/user-attachments/assets/7b95536b-747f-48b0-9285-4c51577ee9f1" width="250" height="auto" />
+  <img src="https://github.com/user-attachments/assets/754992b1-e654-44e9-8eec-8c06e2900fcd" width="250" height="auto" />
+
+The above figures illustrate the overall design of the Lightplatoon, a simple cardboard box with a curved surface, making it unique and friendly. On the back side of Lightplatoon, there is a hatch that allow users to open and inspect the circuits. There are a joystick as the only user interface, and a light sensor on the other side, to gather environmental lighting information.
+
 <img width="1036" height="703" alt="QQ_1761614025490" src="https://github.com/user-attachments/assets/6a901b52-60c1-4ecb-85f0-67b703361cf4" />
 
 Board: Arduino MKR WiFi 1010
@@ -37,6 +42,8 @@ Joystick module:
 
 ## Overall Design
 A VEML7700 ambient light sensor will measure surrounding brightness. The lux values are converted through a logarithmic mapping in order to make the color changes similar how human eyes sense light. Specifically, the light will be dark orange in dark environment, and bright blue in bright environment.
+
+The joystick is tested with a seperate program in the repository, and the light sensor is tested in both artificial lighting environments and natual lighting environments. There will be visible lighting and Vespera color changes in both scenarios.
 
 <img src="https://github.com/user-attachments/assets/89598fe2-b574-4bb3-a192-71747cdaa207" width="600">
 

@@ -40,7 +40,7 @@ A VEML7700 ambient light sensor will measure surrounding brightness. The lux val
 
 <img src="https://github.com/user-attachments/assets/89598fe2-b574-4bb3-a192-71747cdaa207" width="600">
 
-As mentioned, the system operates in two modes, auto and manual. Auto mode is the default mode, which will be engaged after the arduino is powered. It would light two LEDs at a time, perform a flowing light through Vespera. 
+As mentioned, the system operates in two modes, auto and manual. Auto mode is the default mode, which will be engaged after the arduino is powered. It would light two LEDs at a time, perform a flowing light through Vespera. Originally, only one LED will be lighted, which is, in my mind, more intuitive as the following manual mode. However, after testing with multiple classmates and friends, the feedback is that one single LED is kinda too hard to find during daytime. So it now will light two pixels: current LED pixel, and the next one.
 
 <img width="200" height="200" alt="IMG_2062(20251028-151133)" src="https://github.com/user-attachments/assets/b1eff9fe-e54d-4794-acb2-bf993d8a2aff" />
 
